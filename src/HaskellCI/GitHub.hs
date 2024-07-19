@@ -101,9 +101,9 @@ makeGitHub
     -> Either HsCiError GitHub
 makeGitHub _argv config@Config {..} gitconfig prj jobs@JobVersions {..} = do
     let envEnv = Map.fromList
-            [ ("HCNAME", "${{ matrix.compiler }}")         -- e.g. ghc-8.8.4
-            , ("HCKIND", "${{ matrix.compilerKind }}")     --      ghc
-            , ("HCVER",  "${{ matrix.compilerVersion }}")  --      8.8.4
+            [ ("HCNAME", ghWrapExpr "matrix.compiler")         -- e.g. ghc-8.8.4
+            , ("HCKIND", ghWrapExpr "matrix.compilerKind")     --      ghc
+            , ("HCVER",  ghWrapExpr "matrix.compilerVersion")  --      8.8.4
             ]
 
     -- Validity checks
@@ -311,7 +311,12 @@ makeGitHub _argv config@Config {..} gitconfig prj jobs@JobVersions {..} = do
                 Binary.put cfgGhcupJobs -- GHC location affects doctest, e.g
 
         when (doctestEnabled) $ githubUses "cache (tools)" "actions/cache/restore@v4"
-            [ ("key", "${{ runner.os }}-${{ matrix.compiler }}-tools-" ++ toolsConfigHash)
+            [ ("key", intercalate "-" [
+                  ghWrapExpr "runner.os"
+                , ghWrapExpr "matrix.compiler"
+                , "tools"
+                , toolsConfigHash
+                ])
             , ("path", "~/.haskell-ci-tools")
             ]
 
@@ -348,7 +353,12 @@ makeGitHub _argv config@Config {..} gitconfig prj jobs@JobVersions {..} = do
             sh_if range "doctest --version"
 
         when (doctestEnabled) $ githubUsesIf "save cache (tools)" "actions/cache/save@v4" "always()"
-            [ ("key", "${{ runner.os }}-${{ matrix.compiler }}-tools-" ++ toolsConfigHash)
+            [ ("key", intercalate "-" [
+                  ghWrapExpr "runner.os"
+                , ghWrapExpr "matrix.compiler"
+                , "tools"
+                , toolsConfigHash
+                ])
             , ("path", "~/.haskell-ci-tools")
             ]
 
@@ -444,8 +454,16 @@ makeGitHub _argv config@Config {..} gitconfig prj jobs@JobVersions {..} = do
         -- This a hack. https://github.com/actions/cache/issues/109
         -- Hashing Java - Maven style.
         githubUses "restore cache" "actions/cache/restore@v4"
-            [ ("key", "${{ runner.os }}-${{ matrix.compiler }}-${{ github.sha }}")
-            , ("restore-keys", "${{ runner.os }}-${{ matrix.compiler }}-")
+            [ ("key", intercalate "-" [
+                  ghWrapExpr "runner.os"
+                , ghWrapExpr "matrix.compiler"
+                , ghWrapExpr "github.sha"
+                ])
+            , ("restore-keys", intercalate "-" [
+                  ghWrapExpr "runner.os"
+                , ghWrapExpr "matrix.compiler"
+                , "" -- Includes a trailing dash
+                ])
             , ("path", "~/.cabal/store")
             ]
 
@@ -579,7 +597,11 @@ makeGitHub _argv config@Config {..} gitconfig prj jobs@JobVersions {..} = do
                 sh_cs $ "$CABAL v2-haddock --disable-documentation" ++ haddockFlags ++ " $ARG_COMPILER " ++ withHaddock ++ " " ++ allFlags ++ " all"
 
         githubUsesIf "save cache" "actions/cache/save@v4" "always()"
-          [ ("key", "${{ runner.os }}-${{ matrix.compiler }}-${{ github.sha }}")
+          [ ("key", intercalate "-" [
+                  ghWrapExpr "runner.os"
+                , ghWrapExpr "matrix.compiler"
+                , ghWrapExpr "github.sha"
+                ])
           , ("path", "~/.cabal/store")
           ]
 
@@ -591,7 +613,7 @@ makeGitHub _argv config@Config {..} gitconfig prj jobs@JobVersions {..} = do
             }
         , ghJobs = Map.fromList $ buildList $ do
             item (mainJobName, GitHubJob
-                { ghjName            = actionName ++ " - Linux - ${{ matrix.compiler }}"
+                { ghjName            = intercalate " - " [actionName, "Linux", ghWrapExpr "matrix.compiler"]
                   -- NB: The Ubuntu version used in `runs-on` isn't
                   -- particularly important since we use a Docker container.
                 , ghjRunsOn          = ghcRunsOnVer
@@ -599,7 +621,7 @@ makeGitHub _argv config@Config {..} gitconfig prj jobs@JobVersions {..} = do
                 , ghjSteps           = steps
                 , ghjIf              = Nothing
                 , ghjContainer       = Just $ "buildpack-deps:" ++ ubuntuVer
-                , ghjContinueOnError = Just "${{ matrix.allow-failure }}"
+                , ghjContinueOnError = Just $ ghWrapExpr "matrix.allow-failure"
                 , ghjServices        = mconcat
                     [ Map.singleton "postgres" postgresService | cfgPostgres ]
                 , ghjTimeout         = max 10 cfgTimeoutMinutes
@@ -773,10 +795,10 @@ ircJob actionName mainJobName projectName cfg gitconfig = item ("irc", GitHubJob
         , Just repo <- parseGitHubRepo url
 
         = Just
-        $ "${{ always() && (github.repository == '" ++ T.unpack repo ++ "') }}"
+        $ ghWrapExpr "always() && (github.repository == '" ++ T.unpack repo ++ "')"
 
         | otherwise
-        = Just "${{ always() }}"
+        = Just $ ghWrapExpr "always()"
         -- Use always() above to ensure that the IRC job will still run even if
         -- the build job itself fails (see #437).
 
