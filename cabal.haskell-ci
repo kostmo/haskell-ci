@@ -23,7 +23,7 @@ ghc-head: False
 -- remove cabal noise from test output
 -- cabal-noise: False
 
--- Build tests. In addition to True and False you may specify
+-- Build tests. Alternatively to True and False you may specify
 -- a version range, e.g. >= 8.0 to build tests only in some jobs.
 tests: True
 
